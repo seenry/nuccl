@@ -77,3 +77,29 @@ exit:
 fail:
   goto exit;
 }
+
+ncclResult_t ncclTransportKRingConnect(struct ncclComm* comm) {
+  int NCCL_K = 2;
+  ncclResult_t ret = ncclSuccess;
+  if (comm && comm->nRanks > 1) {
+    for (int c = 0; c < comm->nChannels; c++) {
+      int intra_offset = comm->rank % NCCL_K;
+      int inter_offset = (comm->rank / NCCL_K) * NCCL_K;
+
+      int intra_prev = inter_offset + ((intra_offset + NCCL_K - 1) % NCCL_K);
+      int intra_next = inter_offset + ((intra_offset + 1) % NCCL_K);
+      int inter_prev = ((inter_offset + comm->nRanks - NCCL_K) % comm->nRanks) + intra_offset;
+      int inter_next = ((inter_offset + NCCL_K) % comm->nRanks) + intra_offset;
+
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &intra_prev, 1, &intra_next, 0), ret, fail);
+      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &inter_prev, 1, &inter_next, 0), ret, fail);
+    }
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_KRING], 0), ret, fail);
+    INFO(NCCL_INIT, "Connected k-ring");
+  }
+exit:
+  return ret;
+fail:
+  goto exit;
+}
+

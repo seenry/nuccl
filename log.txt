@@ -1,0 +1,32 @@
+1. Adjusted `inclue/nccl_common.h`, incrementing `NCCL_NUM_ALGORITHMS` and
+   creating a new `NCCL_ALGO_<name>`.
+
+2. Added kernels in `device/all_gather.h` AllGather for when the new
+   algorithm is selected.
+
+3. In `init.cc`, attached new algo to `ncclAlgoStr`. Also need to add
+   a graph to `graphs` in `initTransportsRank`
+
+   Notes:
+   - nChannels gets set at line 910
+
+4. Once a collective launches, it will run `getAlgoInfo` in `enqueue.cc`.
+   This requires that the `collCostTable` has an entry for you algo/proto
+   combo set.
+
+   `updateCollCostTable` is where this value is looked up. The main for
+   loop shoud include checks for invalid settings (e.g. k-ring but k is
+   too large). Otherwise, we need `ncclTopoGetAlgoTime` to avoid taking
+   the `bw == 0` branch. There are many ways to do that, the simplest imo
+   is just add an if before that for you algo.
+
+5. In `group.cc`, `ncclCollPreconnectFunc` has a switch for connecting
+   your algorithm's transports. This needs to be set (e.g. you can add
+   a `ncclTransport<ALGO>Connect` to `include/transport.h` and add
+   a definition to `transport/generic.cc`)
+
+
+Notes:
+- initTransportsRank setProxy and nChannels
+- ncclTransportKRingConnect vs Ring connect (GDR and NetPXN)
+- ncclTransportKRingConnect: put kring peers into channel or comm(?)

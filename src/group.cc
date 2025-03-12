@@ -148,6 +148,10 @@ ncclResult_t ncclCollPreconnectFunc(struct ncclAsyncJob* job_) {
           NCCLCHECKGOTO(ncclTransportRingConnect(comm), ret, fail);
           break;
         }
+        case NCCL_ALGO_KRING: {
+          NCCLCHECKGOTO(ncclTransportKRingConnect(comm), ret, fail);
+          break;
+        }
         case NCCL_ALGO_TREE: {
           NCCLCHECKGOTO(ncclTransportTreeConnect(comm), ret, fail);
           break;

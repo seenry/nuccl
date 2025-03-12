@@ -108,6 +108,31 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_LL128
   }
 };
 
+///////////////////////////////////////////////////////////////////////////////
+template<typename T, typename RedOp>
+struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_KRING, NCCL_PROTO_SIMPLE> {
+  __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    bool isNetOffload = work->isOneRPN && work->netRegUsed;
+    if (isNetOffload)
+      runRing<T, RedOp, ProtoSimple<1, 1>, true>(tid, nthreads, work);
+    else
+      runRing<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
+  }
+};
+template<typename T, typename RedOp>
+struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_KRING, NCCL_PROTO_LL> {
+  __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    runRing<T, RedOp, ProtoLL>(tid, nthreads, work);
+  }
+};
+template<typename T, typename RedOp>
+struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_KRING, NCCL_PROTO_LL128> {
+  __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    runRing<T, RedOp, ProtoLL128>(tid, nthreads, work);
+  }
+};
+///////////////////////////////////////////////////////////////////////////////
+
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_PAT, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
