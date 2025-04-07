@@ -25,7 +25,6 @@
    a `ncclTransport<ALGO>Connect` to `include/transport.h` and add
    a definition to `transport/generic.cc`)
 
-
 Notes:
 - initTransportsRank setProxy and nChannels
 - ncclTransportKRingConnect vs Ring connect (GDR and NetPXN)

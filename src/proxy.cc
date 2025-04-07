@@ -29,6 +29,11 @@ void* ncclProxyServiceUDS(void* _args);
 static bool NeedProxy(int type, int pattern, int root, struct ncclRing* ring, int nranks) {
   if (pattern == ncclPatternRing || pattern == ncclPatternRingTwice) return true;
 
+  int NCCL_K = 2;
+  if (pattern == ncclPatternKRing) {
+    return nranks > NCCL_K;
+  }
+
   /* In chains, one rank does not need a proxy. Let's figure out which one it is */
   /* Which index in the reorganized rings should we compare root against */
   const int myrank = 0, nextrank = 1, prevrank = nranks-1;
@@ -678,6 +683,19 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       free(nstepsRecv);
       NCCLCHECK(result);
     } break;
+  case ncclPatternKRing: {
+    int NCCL_K = 2;
+    int intra_offset = comm->rank % NCCL_K;
+    int inter_offset = (comm->rank / NCCL_K) * NCCL_K;
+    int intra_prev = inter_offset + ((intra_offset + NCCL_K - 1) % NCCL_K);
+    int intra_next = inter_offset + ((intra_offset + 1) % NCCL_K);
+    int inter_prev = ((inter_offset + comm->nRanks - NCCL_K) % comm->nRanks) + intra_offset;
+    int inter_next = ((inter_offset + NCCL_K) % comm->nRanks) + intra_offset;
+    NCCLCHECK(SaveProxy(comm, channel, proxyRecv, intra_prev, op, 0, justInquire));
+    NCCLCHECK(SaveProxy(comm, channel, proxyRecv, inter_prev, op, 0, justInquire));
+    NCCLCHECK(SaveProxy(comm, channel, proxySend, intra_next, op, 0, justInquire));
+    NCCLCHECK(SaveProxy(comm, channel, proxySend, inter_next, op, 0, justInquire));
+  } break;
   case ncclPatternSend:
   case ncclPatternRecv: {
       if (op->root == comm->rank) return ncclSuccess;

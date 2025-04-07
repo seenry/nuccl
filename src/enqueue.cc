@@ -1780,6 +1780,7 @@ static ncclResult_t calcCollChunking(
       info->algorithm == NCCL_ALGO_PAT ? ncclPatternPatDown :
       info->algorithm == NCCL_ALGO_NVLS ? ncclPatternNvls :
       info->algorithm == NCCL_ALGO_COLLNET_DIRECT ? ncclPatternCollnetDirect :
+      info->algorithm == NCCL_ALGO_KRING ? ncclPatternKRing :
       ncclPatternRing;
     break;
   case ncclFuncAllReduce:
@@ -1884,6 +1885,7 @@ static ncclResult_t calcCollChunking(
     nstepsPerLoop = 1; nchunksPerLoop = comm->channels[0].collnetDirect.nHeads;
     loopOffset = nChannels * chunkSize * comm->channels[0].collnetDirect.headRank;
     break;
+  case ncclPatternKRing:
   case ncclPatternRing:
     nstepsPerLoop = comm->nRanks-1; nchunksPerLoop = comm->nRanks;
     break;

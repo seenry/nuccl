@@ -94,7 +94,7 @@ ncclResult_t ncclTransportKRingConnect(struct ncclComm* comm) {
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &intra_prev, 1, &intra_next, 0), ret, fail);
       NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &inter_prev, 1, &inter_next, 0), ret, fail);
     }
-    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_KRING], 0), ret, fail);
+    NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), ret, fail);
     INFO(NCCL_INIT, "Connected k-ring");
   }
 exit:
