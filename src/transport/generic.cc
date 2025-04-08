@@ -91,8 +91,12 @@ ncclResult_t ncclTransportKRingConnect(struct ncclComm* comm) {
       int inter_prev = ((inter_offset + comm->nRanks - NCCL_K) % comm->nRanks) + intra_offset;
       int inter_next = ((inter_offset + NCCL_K) % comm->nRanks) + intra_offset;
 
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &intra_prev, 1, &intra_next, 0), ret, fail);
-      NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &inter_prev, 1, &inter_next, 0), ret, fail);
+      if (intra_prev != comm->rank && intra_next != comm->rank) {
+        NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &intra_prev, 1, &intra_next, 0), ret, fail);
+      }
+      if (inter_prev != comm->rank && inter_next != comm->rank) {
+        NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &inter_prev, 1, &inter_next, 0), ret, fail);
+      }
     }
     NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_RING], 0), ret, fail);
     INFO(NCCL_INIT, "Connected k-ring");
