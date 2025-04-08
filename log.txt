@@ -1,31 +1,47 @@
-1. Adjusted `inclue/nccl_common.h`, incrementing `NCCL_NUM_ALGORITHMS` and
-   creating a new `NCCL_ALGO_<name>`.
+# 1. We need NCCL to know that our algorithm exists
 
-2. Added kernels in `device/all_gather.h` AllGather for when the new
-   algorithm is selected.
+## `src/include/nccl_common.h`
 
-3. In `init.cc`, attached new algo to `ncclAlgoStr`. Also need to add
-   a graph to `graphs` in `initTransportsRank`
+a. increment `NCCL_NUM_ALGORITHMS`
 
-   Notes:
-   - nChannels gets set at line 910
+b. add a macro for your algorithm
 
-4. Once a collective launches, it will run `getAlgoInfo` in `enqueue.cc`.
-   This requires that the `collCostTable` has an entry for you algo/proto
-   combo set.
+## `src/inint.cc`
 
-   `updateCollCostTable` is where this value is looked up. The main for
-   loop shoud include checks for invalid settings (e.g. k-ring but k is
-   too large). Otherwise, we need `ncclTopoGetAlgoTime` to avoid taking
-   the `bw == 0` branch. There are many ways to do that, the simplest imo
-   is just add an if before that for you algo.
+c. add an entry in `ncclAlgoStr`
 
-5. In `group.cc`, `ncclCollPreconnectFunc` has a switch for connecting
-   your algorithm's transports. This needs to be set (e.g. you can add
-   a `ncclTransport<ALGO>Connect` to `include/transport.h` and add
-   a definition to `transport/generic.cc`)
+d. update `graphs` in `initTransportsRank` to have a nonnull entry at your algorithm's index. Note: I currently don't know what you will have to do if your algorithm is sufficiently different from ring/tree.
 
-Notes:
-- initTransportsRank setProxy and nChannels
-- ncclTransportKRingConnect vs Ring connect (GDR and NetPXN)
-- ncclTransportKRingConnect: put kring peers into channel or comm(?)
+## `src/enqueue.cc`
+
+e. edit `updateCollCostTable` such that `table[a][p]` is set to not-(-1.0) so that NCCL doesn't think your algo is invalid (e.g. just set it to 0.0).
+
+## `src/device/<coll>.h`
+
+f. create template instances for `RunWorkColl`
+
+# 2. NCCL needs to know how to connect GPUs to one another for your algorithm
+
+## `src/include/proxy.h`
+
+a. add a value in the `ncclPattern_t` enum
+
+## `src/include/transport.h`
+
+b. add a `ncclTransport<algo>Connect` definition
+
+## `src/enqueue.cc`
+
+c. in `calcCollChunking`, update the `switch (info->func)` statement to set the pattern to the value from 2a for the relevant collectives.
+
+d. still in `calcCollChunking`, update `switch (pattern)` statement to prevent NCCL from throwing an exception.
+
+## `src/proxy.cc`
+
+e. update `NeedProxy` to handle your pattern
+
+f. in `ncclProxySaveOp`, add a case to the `switch (op->pattern)`
+
+## `src/transport/generic.cc`
+
+g. write a definition for 2b. Note, when you call `ncclTransportP2pSetup`, the index into `comm->graphs` is based on how you set `graphs` in 1d
