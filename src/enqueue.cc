@@ -1612,7 +1612,7 @@ static ncclResult_t updateCollCostTable(
     if (a == NCCL_ALGO_PAT && info->func == ncclFuncReduceScatter
         && (info->opDev.op == ncclDevPreMulSum || info->opDev.op == ncclDevSumPostDiv)) continue;
     for (int p=0; p<NCCL_NUM_PROTOCOLS; p++) {
-      if (a == NCCL_ALGO_KRING) {
+      if (a == NCCL_ALGO_KRING && p == NCCL_PROTO_SIMPLE) {
         table[a][p] = 0.0;
         continue;
       }

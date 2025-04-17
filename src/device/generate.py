@@ -7,7 +7,7 @@ all_colls =  ["Broadcast","Reduce","AllGather","ReduceScatter","AllReduce","Send
 all_redops = ["Sum","Prod","MinMax","PreMulSum","SumPostDiv"]
 all_tys =    ["i8","u8","i32","u32","i64","u64","f16","f32","f64","bf16","f8e4m3","f8e5m2"]
 all_protos = ["LL","LL128","SIMPLE"]
-all_algos =  ["TREE","RING","COLLNET_DIRECT","COLLNET_CHAIN","NVLS","NVLS_TREE","PAT"]
+all_algos =  ["TREE","RING","COLLNET_DIRECT","COLLNET_CHAIN","NVLS","NVLS_TREE","PAT","KRING"]
 
 ################################################################################
 # The first command line argument is the path to the directory to generate and
@@ -74,7 +74,7 @@ else:
 ################################################################################
 
 algos_of_coll = {
-  "AllGather":     ["RING","COLLNET_DIRECT","NVLS","PAT"],
+  "AllGather":     ["RING","COLLNET_DIRECT","NVLS","PAT","KRING"],
   "AllReduce":     ["TREE","RING","COLLNET_DIRECT","COLLNET_CHAIN","NVLS","NVLS_TREE"],
   "Broadcast":     ["RING"],
   "Reduce":        ["RING"],

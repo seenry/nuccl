@@ -6,7 +6,7 @@ a. increment `NCCL_NUM_ALGORITHMS`
 
 b. add a macro for your algorithm
 
-## `src/inint.cc`
+## `src/init.cc`
 
 c. add an entry in `ncclAlgoStr`
 
@@ -16,9 +16,17 @@ d. update `graphs` in `initTransportsRank` to have a nonnull entry at your algor
 
 e. edit `updateCollCostTable` such that `table[a][p]` is set to not-(-1.0) so that NCCL doesn't think your algo is invalid (e.g. just set it to 0.0).
 
+## `src/device/generate.py`
+
+f. add your algo name to `all_algos` and in `algos_of_coll` put your algorithm under its corresponding collectives.
+
+## `src/include/device.h` 
+
+g. edit `ncclDevFuncId` by incrementing `nAlgos` for the collectives that correspond to your algorithm (should reflect changes in part 1f) and add a stage to the ternary expression chain to handle your algorithm.
+
 ## `src/device/<coll>.h`
 
-f. create template instances for `RunWorkColl`
+. create template instances for `RunWorkColl`
 
 # 2. NCCL needs to know how to connect GPUs to one another for your algorithm
 
