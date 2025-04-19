@@ -99,6 +99,7 @@ namespace {
     T *outputBuf = (T*)work->recvbuff;
 
     int k_value = ring->k;
+    if (k_value == 1) return;
     int intra_prev = ring->intra_prev;
     int intra_next = ring->intra_next;
     int rank_inter = (ringRanks[0] / k_value) * k_value;
