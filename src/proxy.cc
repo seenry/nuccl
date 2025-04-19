@@ -565,6 +565,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       const char* k_ = ncclGetEnv("NCCL_K");
       int k = atoi(k_);
 
+      if (k != 1) {
       int intra_offset = comm->rank % k;
       int inter_offset = (comm->rank / k) * k;
       int intra_prev = inter_offset + ((intra_offset + k - 1) % k);
@@ -576,8 +577,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       if (inter_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, inter_prev, op, 0, justInquire));
       if (intra_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, intra_next, op, 0, justInquire));
       if (inter_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, inter_next, op, 0, justInquire));
-
-      /*
+      } else {
       struct ncclRing* ring = &channel->ring;
       if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
         NCCLCHECK(SaveProxy(comm, channel, proxyRecv, ring->prev, op, 0, justInquire));
@@ -585,7 +585,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
         NCCLCHECK(SaveProxy(comm, channel, proxySend, ring->next, op, 0, justInquire));
       }
-      */
+      }
     } break;
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:
