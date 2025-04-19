@@ -562,6 +562,22 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
   case ncclPatternRingTwice:
   case ncclPatternPipelineFrom:
   case ncclPatternPipelineTo: {
+      const char* k_ = ncclGetEnv("NCCL_K");
+      int k = atoi(k_);
+
+      int intra_offset = comm->rank % k;
+      int inter_offset = (comm->rank / k) * k;
+      int intra_prev = inter_offset + ((intra_offset + k - 1) % k);
+      int intra_next = inter_offset + ((intra_offset + 1) % k);
+      int inter_prev = ((inter_offset + comm->nRanks - k) % comm->nRanks) + intra_offset;
+      int inter_next = ((inter_offset + k) % comm->nRanks) + intra_offset;
+
+      if (intra_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, intra_prev, op, 0, justInquire));
+      if (inter_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, inter_prev, op, 0, justInquire));
+      if (intra_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, intra_next, op, 0, justInquire));
+      if (inter_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, inter_next, op, 0, justInquire));
+
+      /*
       struct ncclRing* ring = &channel->ring;
       if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
         NCCLCHECK(SaveProxy(comm, channel, proxyRecv, ring->prev, op, 0, justInquire));
@@ -569,6 +585,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       if (NeedProxy(proxySend, op->pattern, op->root, ring, comm->nRanks)) {
         NCCLCHECK(SaveProxy(comm, channel, proxySend, ring->next, op, 0, justInquire));
       }
+      */
     } break;
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:

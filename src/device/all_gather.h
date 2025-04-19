@@ -9,6 +9,161 @@
 #include "primitives.h"
 
 namespace {
+
+  template<typename T, typename RedOp, typename Proto, bool isNetOffload = false>
+  __device__ __forceinline__ void runOuter(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    ncclRing *ring = &ncclShmem.channel.ring;
+    const int *ringRanks = ring->userRanks;
+    const int nranks = ncclShmem.comm.nRanks;
+    ssize_t count, partOffset, partCount, chunkCount;
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), &count, &partOffset, &partCount, &chunkCount);
+    ssize_t offset;
+    ssize_t dataOffset;
+    int nelem;
+    int rankDest;
+    int workNthreads;
+    T *inputBuf = (T*)work->sendbuff;
+    T *outputBuf = (T*)work->recvbuff;
+
+    int inter_prev = ring->inter_prev;
+    int inter_next = ring->inter_next;
+    int k_value = ring->k;
+
+    if (isNetOffload) {
+      workNthreads = WARP_SIZE;
+      chunkCount = NCCL_MAX_NET_SIZE;
+    } else {
+      workNthreads = nthreads;
+    }
+    if (tid < workNthreads) {
+      // Coverity reports that the callee treats &ring->next as an array.  However, due to the use of
+      // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
+      // coverity[callee_ptr_arith:FALSE]
+      Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0, isNetOffload> prims
+        (tid, workNthreads, &inter_prev, &inter_next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work, NULL, isNetOffload ? NCCL_MAX_NET_SIZE : 0);
+      for (size_t elemOffset = 0; elemOffset < partCount; elemOffset += chunkCount) {
+        /////////////// begin AllGather steps ///////////////
+        nelem = min(chunkCount, partCount - elemOffset);
+        dataOffset = partOffset + elemOffset;
+
+        // step 0: push data to next GPU
+        rankDest = ringRanks[0];
+        offset = dataOffset + rankDest * count;
+
+        if ((inputBuf + dataOffset == outputBuf + offset) || isNetOffload) { // In place or onePPN
+          prims.directSend(dataOffset, offset, nelem);
+        } else {
+          prims.directCopySend(dataOffset, offset, nelem);
+        }
+
+        // k-2 steps: copy to next GPU
+        for (int j = k_value; j < nranks - k_value; j += k_value) {
+          rankDest = (rankDest + nranks - j) % nranks;
+          offset = dataOffset + rankDest * count;
+          prims.directRecvCopyDirectSend(offset, offset, nelem);
+        }
+
+        // Make final copy from buffer to dest.
+        rankDest = (rankDest + nranks - k_value) % nranks;
+        offset = dataOffset + rankDest * count;
+
+        // Final wait/copy.
+        prims.directRecv(offset, offset, nelem);
+      }
+    } else if (inputBuf != outputBuf + ringRanks[0] * count) {
+      inputBuf = inputBuf + partOffset;
+      outputBuf = outputBuf + partOffset + ringRanks[0] * count;
+      reduceCopy<COLL_UNROLL, RedOp, T, 0, 1, 1, 0, 1, 1, /*PreOpSrcs=*/0>
+        (tid - workNthreads, nthreads - workNthreads, work->redOpArg, &work->redOpArg, false, 1, (void**)&inputBuf, 1, (void**)&outputBuf, partCount);
+    }
+    // we have to wait for all warps before we can proceed to the next work;
+    // otherwise, we can have contention if next work will use the outputBuf
+    // in this work. We use bar 14 to avoid conflicts with prims barrier and
+    // __syncthread().
+    if (isNetOffload) barrier_sync(14, nthreads);
+  }
+  
+  template<typename T, typename RedOp, typename Proto, bool isNetOffload = false>
+  __device__ __forceinline__ void runInner(int tid, int nthreads, struct ncclDevWorkColl* work) {
+    ncclRing *ring = &ncclShmem.channel.ring;
+    const int *ringRanks = ring->userRanks;
+    const int nranks = ncclShmem.comm.nRanks;
+    ssize_t count, partOffset, partCount, chunkCount;
+    ncclCollCbdPart(work, ncclShmem.channelId, Proto::Id, sizeof(T), &count, &partOffset, &partCount, &chunkCount);
+    ssize_t offset;
+    ssize_t dataOffset;
+    int nelem;
+    int rankDest;
+    int workNthreads;
+    T *inputBuf = (T*)work->sendbuff;
+    T *outputBuf = (T*)work->recvbuff;
+
+    int k_value = ring->k;
+    int intra_prev = ring->intra_prev;
+    int intra_next = ring->intra_next;
+    int rank_inter = (ringRanks[0] / k_value) * k_value;
+    int rank_intra = ringRanks[0] % k_value;
+
+    if (isNetOffload) {
+      workNthreads = WARP_SIZE;
+      chunkCount = NCCL_MAX_NET_SIZE;
+    } else {
+      workNthreads = nthreads;
+    }
+    if (tid < workNthreads) {
+      // Coverity reports that the callee treats &ring->next as an array.  However, due to the use of
+      // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
+      // coverity[callee_ptr_arith:FALSE]
+      Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0, isNetOffload> prims
+        (tid, workNthreads, &intra_prev, &intra_next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work, NULL, isNetOffload ? NCCL_MAX_NET_SIZE : 0);
+      for (size_t elemOffset = 0; elemOffset < partCount; elemOffset += chunkCount) {
+        /////////////// begin AllGather steps ///////////////
+        nelem = min(chunkCount, partCount - elemOffset);
+        dataOffset = partOffset + elemOffset;
+      for (int inter_off = 0; inter_off < nranks; inter_off += k_value) {
+
+        // step 0: push data to next GPU
+        rankDest = rank_inter + rank_intra;
+        offset = dataOffset + rankDest * count;
+
+        if ((inputBuf + dataOffset == outputBuf + offset) || isNetOffload) { // In place or onePPN
+          prims.directSend(dataOffset, offset, nelem);
+        } else {
+          prims.directCopySend(dataOffset, offset, nelem);
+        }
+
+        // k-2 steps: copy to next GPU
+        for (int j = 1; j < k_value - 1; ++j) {
+          rankDest = rank_inter + ((rank_intra + k_value - j) % k_value);
+          offset = dataOffset + rankDest * count;
+          prims.directRecvCopyDirectSend(offset, offset, nelem);
+        }
+
+        // Make final copy from buffer to dest.
+        rankDest = rank_inter + ((rank_intra + 1) % k_value);
+        offset = dataOffset + rankDest * count;
+
+        // Final wait/copy.
+        prims.directRecv(offset, offset, nelem);
+
+        rank_inter = (rank_inter + k_value) % nranks;
+      }
+    }
+    } else if (inputBuf != outputBuf + ringRanks[0] * count) {
+      inputBuf = inputBuf + partOffset;
+      outputBuf = outputBuf + partOffset + ringRanks[0] * count;
+      reduceCopy<COLL_UNROLL, RedOp, T, 0, 1, 1, 0, 1, 1, /*PreOpSrcs=*/0>
+        (tid - workNthreads, nthreads - workNthreads, work->redOpArg, &work->redOpArg, false, 1, (void**)&inputBuf, 1, (void**)&outputBuf, partCount);
+    }
+    // we have to wait for all warps before we can proceed to the next work;
+    // otherwise, we can have contention if next work will use the outputBuf
+    // in this work. We use bar 14 to avoid conflicts with prims barrier and
+    // __syncthread().
+    if (isNetOffload) barrier_sync(14, nthreads);
+
+
+  }
+
   template<typename T, typename RedOp, typename Proto, bool isNetOffload = false>
   __device__ __forceinline__ void runRing(int tid, int nthreads, struct ncclDevWorkColl* work) {
     ncclRing *ring = &ncclShmem.channel.ring;
@@ -86,11 +241,8 @@ namespace {
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
-    bool isNetOffload = work->isOneRPN && work->netRegUsed;
-    if (isNetOffload)
-      runRing<T, RedOp, ProtoSimple<1, 1>, true>(tid, nthreads, work);
-    else
-      runRing<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
+    runOuter<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
+    runInner<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
   }
 };
 

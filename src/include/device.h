@@ -150,6 +150,12 @@ struct ncclRing {
   int* userRanks;
 
   int index; // This rank's index in the ring
+
+  int k;
+  int inter_prev;
+  int inter_next;
+  int intra_prev;
+  int intra_next;
 };
 
 
