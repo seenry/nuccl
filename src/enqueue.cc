@@ -263,6 +263,10 @@ ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
   struct ncclKernelPlanner* planner = &comm->planner;
   struct ncclTaskColl *task;
 
+  // Get k value
+  const char* k_ = ncclGetEnv("NCCL_K");
+  int k = atoi(k_);
+
   task = ncclIntruQueueHead(&planner->collTaskQueue);
   while (task != nullptr) {
     // Build a ncclDevWorkColl[Reg?] struct for each task.
@@ -295,6 +299,7 @@ ncclResult_t ncclTasksRegAndEnqueue(struct ncclComm* comm) {
       devWork.netRegUsed = 1;
     if (task->regBufType & (NCCL_IPC_REG_BUFFER | NCCL_NVLS_REG_BUFFER))
       devWork.regUsed = 1;
+    devWork.k_val = k;
 
     if (task->regBufType & NCCL_NVLS_REG_BUFFER) {
       struct ncclDevWorkCollReg workReg = {};

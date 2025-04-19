@@ -25,9 +25,16 @@ namespace {
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
 
-    int inter_prev = ring->inter_prev;
-    int inter_next = ring->inter_next;
-    int k_value = ring->k;
+    int k_value = work->k_val;
+    int intra_offset = ringRanks[0] % k_value;
+    int inter_offset = (ringRanks[0] / k_value) * k_value;
+
+    int inter_prev = ((inter_offset + nranks - k_value) % nranks) + intra_offset;
+    int inter_next = ((inter_offset + k_value) % nranks) + intra_offset;
+
+    printf("OUTER RING [%d] k_value=%d inter_prev=%d inter_next=%d\n", ncclShmem.comm.rank, k_value, inter_prev, inter_next);
+
+    if (k_value >= nranks) return;
 
     if (isNetOffload) {
       workNthreads = WARP_SIZE;
@@ -98,12 +105,20 @@ namespace {
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
 
-    int k_value = ring->k;
-    if (k_value == 1) return;
-    int intra_prev = ring->intra_prev;
-    int intra_next = ring->intra_next;
+    int k_value = work->k_val;
+    int intra_offset = ringRanks[0] % k_value;
+    int inter_offset = (ringRanks[0] / k_value) * k_value;
+
+    int intra_prev = inter_offset + ((intra_offset + k_value - 1) % k_value);
+    int intra_next = inter_offset + ((intra_offset + 1) % k_value);
+
     int rank_inter = (ringRanks[0] / k_value) * k_value;
     int rank_intra = ringRanks[0] % k_value;
+
+    printf("INNER RING [%d] k_value=%d rank_inter=%d rank_intra=%d intra_prev=%d intra_next=%d\n", ncclShmem.comm.rank, k_value, rank_inter, rank_intra, intra_prev, intra_next);
+
+    if (k_value == 1) return;
+
 
     if (isNetOffload) {
       workNthreads = WARP_SIZE;

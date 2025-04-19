@@ -573,10 +573,15 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       int inter_prev = ((inter_offset + comm->nRanks - k) % comm->nRanks) + intra_offset;
       int inter_next = ((inter_offset + k) % comm->nRanks) + intra_offset;
 
+      printf("PROXY [%d] k=%d intra_prev=%d intra_next=%d inter_prev=%d inter_next=%d\n", comm->rank, k, intra_prev, intra_next, inter_prev, inter_next);
+
       if (intra_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, intra_prev, op, 0, justInquire));
       if (inter_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, inter_prev, op, 0, justInquire));
       if (intra_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, intra_next, op, 0, justInquire));
       if (inter_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, inter_next, op, 0, justInquire));
+
+      printf("PROXY [%d] done\n", comm->rank);
+
       } else {
       struct ncclRing* ring = &channel->ring;
       if (NeedProxy(proxyRecv, op->pattern, op->root, ring, comm->nRanks)) {
@@ -701,6 +706,8 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       NCCLCHECK(SaveProxy(comm, channel, op->pattern == ncclPatternSend ? proxySend : proxyRecv, op->root, op, 1, justInquire));
     } break;
   }
+
+  printf("[%d] SaveProxy complete\n", comm->rank);
   return ncclSuccess;
 }
 

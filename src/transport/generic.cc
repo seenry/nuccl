@@ -3,12 +3,13 @@
 #include "bootstrap.h"
 
 ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
+  ncclResult_t ret = ncclSuccess;
+
   const char* k_ = ncclGetEnv("NCCL_K");
   int k = atoi(k_);
 
   if (k != 1) {
 
-  ncclResult_t ret = ncclSuccess;
   if (comm && comm->nRanks > 1) {
     for (int c = 0; c < comm->nChannels; c++) {
       int intra_offset = comm->rank % k;
@@ -18,13 +19,6 @@ ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
       int intra_next = inter_offset + ((intra_offset + 1) % k);
       int inter_prev = ((inter_offset + comm->nRanks - k) % comm->nRanks) + intra_offset;
       int inter_next = ((inter_offset + k) % comm->nRanks) + intra_offset;
-
-      struct ncclChannel* channel = comm->channels + c;
-      channel->ring.k = k;
-      channel->ring.intra_prev = intra_prev;
-      channel->ring.intra_next = intra_next;
-      channel->ring.inter_prev = inter_prev;
-      channel->ring.inter_next = inter_next;
 
       if (intra_prev != comm->rank && intra_next != comm->rank) {
         NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &intra_prev, 1, &intra_next, 0), ret, fail);
@@ -43,7 +37,7 @@ ncclResult_t ncclTransportRingConnect(struct ncclComm* comm) {
     bool useGdr;
   };
   struct ringConnInfo* ringInfo = NULL;
-  ncclResult_t ret = ncclSuccess;
+  ret = ncclSuccess;
   if (comm && comm->nRanks > 1) {
     comm->useGdr = true;
     comm->useNetPXN = false;
