@@ -565,22 +565,22 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       const char* k_ = ncclGetEnv("NCCL_K");
       int k = atoi(k_);
 
-      if (k != 1) {
+      if (k) {
       int intra_offset = comm->rank % k;
       int inter_offset = (comm->rank / k) * k;
       int intra_prev = inter_offset + ((intra_offset + k - 1) % k);
       int intra_next = inter_offset + ((intra_offset + 1) % k);
-      int inter_prev = ((inter_offset + comm->nRanks - k) % comm->nRanks) + intra_offset;
-      int inter_next = ((inter_offset + k) % comm->nRanks) + intra_offset;
 
-      printf("PROXY [%d] k=%d intra_prev=%d intra_next=%d inter_prev=%d inter_next=%d\n", comm->rank, k, intra_prev, intra_next, inter_prev, inter_next);
+      int inter_prev = ((comm->rank + comm->nRanks - k) % comm->nRanks);
+      int inter_next = ((comm->rank + k) % comm->nRanks);
+
+      // printf("PROXY [%d] k=%d intra_prev=%d intra_next=%d inter_prev=%d inter_next=%d\n", comm->rank, k, intra_prev, intra_next, inter_prev, inter_next);
 
       if (intra_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, intra_prev, op, 0, justInquire));
       if (inter_prev != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxyRecv, inter_prev, op, 0, justInquire));
       if (intra_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, intra_next, op, 0, justInquire));
       if (inter_next != comm->rank) NCCLCHECK(SaveProxy(comm, channel, proxySend, inter_next, op, 0, justInquire));
 
-      printf("PROXY [%d] done\n", comm->rank);
 
       } else {
       struct ncclRing* ring = &channel->ring;
@@ -591,6 +591,9 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
         NCCLCHECK(SaveProxy(comm, channel, proxySend, ring->next, op, 0, justInquire));
       }
       }
+
+      // printf("PROXY [%d] done\n", comm->rank);
+
     } break;
   case ncclPatternTreeUp:
   case ncclPatternTreeDown:
@@ -707,7 +710,7 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
     } break;
   }
 
-  printf("[%d] SaveProxy complete\n", comm->rank);
+  // printf("[%d] SaveProxy complete\n", comm->rank);
   return ncclSuccess;
 }
 
