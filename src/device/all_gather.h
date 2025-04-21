@@ -268,16 +268,21 @@ struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPL
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_LL> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
-    runRing<T, RedOp, ProtoLL>(tid, nthreads, work);
+    runOuter<T, RedOp, ProtoLL, false>(tid, nthreads, work);
+    runInner<T, RedOp, ProtoLL, false>(tid, nthreads, work);
   }
 };
+
 
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_LL128> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
-    runRing<T, RedOp, ProtoLL128>(tid, nthreads, work);
+    runOuter<T, RedOp, ProtoLL128, false>(tid, nthreads, work);
+    runInner<T, RedOp, ProtoLL128, false>(tid, nthreads, work);
   }
 };
+
+
 
 template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_PAT, NCCL_PROTO_SIMPLE> {
