@@ -25,19 +25,10 @@ namespace {
     T *inputBuf = (T*)work->sendbuff;
     T *outputBuf = (T*)work->recvbuff;
 
-    // if (tid ==0 ){
-      // printf("OUTER RING [%d] BEGIN\n", ncclShmem.comm.rank);
-    // }
-
     const int k_value = work->k_val;
 
     int inter_prev = ((ringRanks[0] + nranks - k_value) % nranks);
     int inter_next = ((ringRanks[0] + k_value) % nranks);
-
-    // printf("OUTER RING [%d] k_value=%d inter_prev=%d inter_next=%d\n", ncclShmem.comm.rank, k_value, inter_prev, inter_next);
-    // if (tid == 0) {
-      // printf("OUTER RING [%d] k_value=%d inter_prev=%d inter_next=%d\n", ncclShmem.comm.rank, k_value, inter_prev, inter_next);
-    // }
 
     if (k_value >= nranks) return;
 
@@ -55,9 +46,6 @@ namespace {
         (tid, workNthreads, &inter_prev, &inter_next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work, NULL, isNetOffload ? NCCL_MAX_NET_SIZE : 0);
 
       for (size_t elemOffset = 0; elemOffset < partCount; elemOffset += chunkCount) {
-        // if (tid == 0) {
-        //   printf("0. OUTER RING [%d] elemOffset=%ld partCount=%ld chunkCount=%ld\n", ncclShmem.comm.rank, elemOffset, partCount, chunkCount);
-        // }
         /////////////// begin AllGather steps ///////////////
         nelem = min(chunkCount, partCount - elemOffset);
         dataOffset = partOffset + elemOffset;
@@ -71,22 +59,13 @@ namespace {
         } else {
           prims.directCopySend(dataOffset, offset, nelem);
         }
-        // if (tid == 0) {
-        //   printf("1. OUTER RING [%d] k_value=%d rankDest=%d offset=%ld step: 0\n ", ncclShmem.comm.rank, k_value, rankDest, offset);
-        //   // printf("OUTER RING [%d] k_value=%d rankDest=%d offset=%ld step: 0\n ", ncclShmem.comm.rank, k_value, rankDest, offset);
-        // }
 
         // k-2 steps: copy to next GPU
         for (int j = k_value; j < nranks - k_value; j += k_value) {
           rankDest = (ringRanks[0] + nranks - j) % nranks;
           offset = dataOffset + rankDest * count;
+          
           prims.directRecvCopyDirectSend(offset, offset, nelem);
-          // prims.directRecvCopy(offset, offset, nelem);
-          // barrier_sync(14, nthreads);
-          // prims.directSend(offset, offset, nelem);
-          // if (tid == 0) {
-          //   printf("2. OUTER RING [%d] k_value=%d rankDest=%d offset=%ld step: %d\n", ncclShmem.comm.rank, k_value, rankDest, offset, j);
-          // }
         }
 
         // Make final copy from buffer to dest.
@@ -95,10 +74,6 @@ namespace {
 
         // Final wait/copy.
         prims.directRecv(offset, offset, nelem);
-        // prims.directRecvCopy(offset, offset, nelem);
-        // if (tid == 0) {
-        //   printf("3. OUTER RING [%d] k_value=%d rankDest=%d offset=%ld step: %d\n", ncclShmem.comm.rank, k_value, rankDest, offset, nranks);
-        // }
       }
     } else if (inputBuf != outputBuf + ringRanks[0] * count) {
       inputBuf = inputBuf + partOffset;
@@ -135,14 +110,10 @@ namespace {
     const int intra_prev = inter_offset + ((intra_offset + k_value - 1) % k_value);
     const int intra_next = inter_offset + ((intra_offset + 1) % k_value);
 
-    int inter_prev = ((ringRanks[0] + nranks - k_value) % nranks);
-    int inter_next = ((ringRanks[0] + k_value) % nranks);
-
-
     int rank_inter = inter_offset;
     const int rank_intra = intra_offset;
 
-    // printf("INNER RING [%d] k_value=%d rank_inter=%d rank_intra=%d intra_prev=%d intra_next=%d\n", ncclShmem.comm.rank, k_value, rank_inter, rank_intra, intra_prev, intra_next);
+    const int use_input = (k_value == nranks) ? 1 : 0;
 
     if (k_value == 1) return;
 
@@ -158,11 +129,6 @@ namespace {
       // FanSymmetric<1>, only the first element is ever accessed, so it's fine.
       // coverity[callee_ptr_arith:FALSE]
 
-      // {
-      //   Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0, isNetOffload> prims_0
-      //   (tid, workNthreads, &inter_prev, &inter_next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work, NULL, isNetOffload ? NCCL_MAX_NET_SIZE : 0);
-      // }
-      
       Primitives<T, RedOp, FanSymmetric<1>, 1, Proto, 0, isNetOffload> prims
         (tid, workNthreads, &intra_prev, &intra_next, inputBuf, outputBuf, work->redOpArg, 0, 0, 0, work, NULL, isNetOffload ? NCCL_MAX_NET_SIZE : 0);
       for (size_t elemOffset = 0; elemOffset < partCount; elemOffset += chunkCount) {
@@ -171,17 +137,18 @@ namespace {
         dataOffset = partOffset + elemOffset;
         for (int inter_off = 0; inter_off < nranks; inter_off += k_value) {
 
-          if (tid == 0) {
-            printf("INNER RING [%d] inter_off=%d rank_inter=%d\n", ncclShmem.comm.rank, inter_off, rank_inter);
-          }
           // step 0: push data to next GPU
           rankDest = rank_inter + rank_intra;
           offset = dataOffset + rankDest * count;
 
-          if ((inputBuf + dataOffset == outputBuf + offset) || isNetOffload) { // In place or onePPN
-            prims.directSend(dataOffset, offset, nelem);
+          if (use_input) {
+            if ((inputBuf + dataOffset == outputBuf + offset) || isNetOffload) { // In place or onePPN
+              prims.directSend(dataOffset, offset, nelem);
+            } else {
+              prims.directCopySend(dataOffset, offset, nelem);
+            }
           } else {
-            prims.directCopySend(dataOffset, offset, nelem);
+            prims.directSendFromOutput(offset, nelem);
           }
 
           // k-2 steps: copy to next GPU
@@ -294,9 +261,6 @@ template<typename T, typename RedOp>
 struct RunWorkColl<ncclFuncAllGather, T, RedOp, NCCL_ALGO_RING, NCCL_PROTO_SIMPLE> {
   __device__ __forceinline__ void run(int tid, int nthreads, struct ncclDevWorkColl* work) {
     runOuter<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
-    barrier_sync(14, nthreads);
-    if (tid == 0)
-      printf("================ asdfasdfasdfadsasdfasdfasdf\n");
     runInner<T, RedOp, ProtoSimple<ALLGATHER_CHUNKSTEPS/ALLGATHER_SLICESTEPS, ALLGATHER_SLICESTEPS>, false>(tid, nthreads, work);
   }
 };
